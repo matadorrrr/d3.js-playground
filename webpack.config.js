@@ -1,4 +1,4 @@
-var webpack = require("webpack");
+//var webpack = require("webpack");
 
 module.exports = {
   entry: __dirname + '/app_modules/js/main.js',

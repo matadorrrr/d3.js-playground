@@ -286,15 +286,15 @@
         <div class="shell-selector">
           <div class="shell-selector-button">
             <div class="shell-selector-button-js" @click="showJs"
-              :class="{'shell-selector-active': isJsActive}">
+              :class="{'shell-selector-active': editorStatus.js.isActive}">
               .js
             </div>
             <div class="shell-selector-button-css" @click="showCss" 
-              :class="{'shell-selector-active': isCssActive}">
+              :class="{'shell-selector-active': editorStatus.css.isActive}">
               .css
             </div>
             <div class="shell-selector-button-data" @click="showData" 
-              :class="{'shell-selector-active': isDataActive}">
+              :class="{'shell-selector-active': editorStatus.$data.isActive}">
               $data
             </div>
           </div>
@@ -332,56 +332,43 @@
   import Log from "./log-viewer.vue";
   import Util from "./../js/my-util.js";
   import DOM from "./../js/my-dom.js";
+  import _ from "lodash";
   
   export default {
     data: {
       isRefreshClicked: false,
-      isDataActive: false,
-      isCssActive: false,
-      isJsActive: false,
-      activeSelector: "",
-      _$data: " ",
-      _css: " ",
-      _js: " ",
+      editorStatus: {
+        js: { isActive: false, text: " "},
+        css: { isActive: false, text: " "},
+        $data: { isActive: false, text: " "}
+      },
       editor: null,
       isUpdateStatus: false,
       statusMessage: ""
     },
     ready: function(){
       this.__initEditor("editor");
-      var log = new Vue(Log).$mount("#log");
-      var manual = new Vue(Manual).$mount("#modal");
-      this.isJsActive = true;
-      this.activeSelector = "_js";
+      const logVM = new Vue(Log).$mount("#log");
+      const manVM = new Vue(Manual).$mount("#modal");
+      this.showJs();
       var savedTexts = JSON.parse(localStorage.getItem("savedTexts"));
       if(savedTexts){
-        this._js = savedTexts.js;
-        this._css = savedTexts.css;
-        this._$data = savedTexts.$data;
-        var buff = this[this.activeSelector];
-        this.editor.setValue(buff, -1);
-      }else{
-        this._css = " ";
-        this._$data = " ";
+        this.editorStatus.js.text = savedTexts.js;
+        this.editorStatus.css.text = savedTexts.css;
+        this.editorStatus.$data.text = savedTexts.$data;
+        var activeField = this.__whatisActive();
+        this.editor.setValue(this.editorStatus[activeField].text, -1);
       }
-      console._log = console.log;
-      console.log = function(message){
-        log.$emit("write", message);
-        console._log(message);
-      };
-      window.onerror = (msg, file, line, column, err) => {
-        console.log(msg);
-        console.log(`Uncaught Exeption line: ${line}`);
-      };
+      this.__setLogHook(logVM);
       this.refreshD3();
     },
     methods: {
       save: function(){
         var self = this;
         var savedTexts = {
-          js: self._js,
-          css: self._css, 
-          $data: self._$data,
+          js: self.editorStatus.js.text,
+          css: self.editorStatus.css.text, 
+          $data: self.editorStatus.$data.text,
           date: Util.formatDate(new Date())
         };
         localStorage.setItem("savedTexts", JSON.stringify(savedTexts));
@@ -390,11 +377,11 @@
       reload: function(){
         var savedTexts = JSON.parse(localStorage.getItem("savedTexts"));
         if(savedTexts){
-          this._js = savedTexts.js;
-          this._css = savedTexts.css;
-          this._$data = savedTexts.$data;
-          var buff = this[this.activeSelector];
-          this.editor.setValue(buff, -1);
+          this.editorStatus.js.text = savedTexts.js;
+          this.editorStatus.css.text = savedTexts.css;
+          this.editorStatus.$data.text = savedTexts.$data;
+          var activeField = this.__whatisActive();
+          this.editor.setValue(this.editorStatus[activeField].text, -1);
           this.__updateStaus(`reverted to  ${savedTexts.date}`);
         }
       },
@@ -405,9 +392,9 @@
         });
       },
       empty: function(){
-        this._js = " ";
-        this._css = " ";
-        this._$data = " ";
+        this.editorStatus.js.text = " ";
+        this.editorStatus.css.text = " ";
+        this.editorStatus.$data.text = " ";
         this.editor.setValue(" ", -1);
       },
       refreshD3: function(){
@@ -420,41 +407,35 @@
         DOM.removeStyle("my-style");
         DOM.setStyle(this._css, "my-style");
         var dataObj = {};
-        try{ dataObj = JSON.parse(this._$data); }
+        try{ dataObj = JSON.parse(this.editorStatus.$data.text); }
         catch(e){}
         DOM.removeJs();
-        DOM.setJs(this._js, dataObj);
+        DOM.setJs(this.editorStatus.js.text, dataObj);
       },
       showData: function(){
-        var activeSelector = this.__whatisActive(
-          this.isDataActive, this.isCssActive, this.isJsActive);
-        if(activeSelector != "data"){
-          this.isDataActive = true;
-          this.activeSelector = "_$data";
-          this.isCssActive = this.isJsActive = false;
-          this.editor.setValue(this._$data, -1);
+        if("$data" != this.__whatisActive()){
+          this.editorStatus.$data.isActive = true;
+          this.editorStatus.css.isActive = false;
+          this.editorStatus.js.isActive  = false;
+          this.editor.setValue(this.editorStatus.$data.text, -1);
           this.editor.getSession().setMode("ace/mode/javascript");
         }
       },
       showCss: function(){
-        var activeSelector = this.__whatisActive(
-          this.isDataActive, this.isCssActive, this.isJsActive);
-        if(activeSelector != "css"){
-          this.isCssActive = true;
-          this.activeSelector = "_css";
-          this.isDataActive = this.isJsActive = false;
-          this.editor.setValue(this._css, -1);
+        if("css" != this.__whatisActive()){
+          this.editorStatus.css.isActive = true;
+          this.editorStatus.$data.isActive = false;
+          this.editorStatus.js.isActive  = false;
+          this.editor.setValue(this.editorStatus.css.text, -1);
           this.editor.getSession().setMode("ace/mode/css");
         }
       },
       showJs: function(){
-        var activeSelector = this.__whatisActive(
-          this.isDataActive, this.isCssActive, this.isJsActive);
-        if(activeSelector != "js"){
-          this.isJsActive = true;
-          this.activeSelector = "_js";
-          this.isCssActive = this.isDataActive = false;
-          this.editor.setValue(this._js, -1);
+        if("js" != this.__whatisActive()){
+          this.editorStatus.js.isActive = true;
+          this.editorStatus.$data.isActive = false;
+          this.editorStatus.css.isActive  = false;
+          this.editor.setValue(this.editorStatus.js.text, -1);
           this.editor.getSession().setMode("ace/mode/javascript");
         }
       },
@@ -468,20 +449,17 @@
           enableLiveAutocompletion: true
         });
         this.editor.setFontSize(12);
-        this.editor.getSession().setMode("ace/mode/javascript");
         this.editor.getSession().setUseWrapMode(true);
         this.editor.getSession().setTabSize(2);
         this.editor.on("change", (e) => {
-          this[this.activeSelector] = this.editor.getValue();
+          var activeField = this.__whatisActive();
+          this.editorStatus[activeField].text = this.editor.getValue();
         });        
       },
-      __whatisActive: function($data, css, js){
-        var selectors = { 
-          $data: { active: $data },
-          css: { active: css },
-          js: { active: js }
-        };
-        return _.findKey(selectors, "active");
+      __whatisActive: function(){
+        return _.findKey(this.editorStatus, (o) => {
+          return o.isActive;
+        });
       },
       __updateStaus: function(message){
         this.statusMessage = message;
@@ -489,6 +467,17 @@
         setTimeout(()=> {
           this.isUpdateStatus = false;
         }, 1000 * 3);
+      },
+      __setLogHook: function(logVM){
+        console._log = console.log;
+        console.log = function(message){
+          logVM.$emit("write", message);
+          console._log(message);
+        };
+        window.onerror = (msg, file, line, column, err) => {
+          console.log(msg);
+          console.log(`Uncaught Exeption line: ${line}`);
+        };
       }
     }
   };
