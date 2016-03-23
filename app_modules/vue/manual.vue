@@ -13,14 +13,14 @@
 
 <template>
   <div>
-    <div v-html="input | marked" class="manual-container"></div>
+    <div v-html="text | marked" class="manual-container"></div>
   </div>
 </template>
 
 <script>
   export default {
     data: {
-      input: String() 
+      text: String() 
         + "## D3.js Playground v1.0.0\n"
         + "Playground for D3.js v3.5.16 with javascript editor.\n"
         + "  \n"

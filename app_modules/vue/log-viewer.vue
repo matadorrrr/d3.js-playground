@@ -85,12 +85,6 @@
       logs: [],
       MAX_LENGTH: 1000
     },
-    created: function(){
-      this.$on("write", (message) => {
-        var date = Util.formatDate(new Date());
-        this.logs.push({date, message});        
-      });
-    },
     watch: {
       "logs": function(newval, oldval){
         if(this.logs.length > this.MAX_LENGTH){
@@ -100,6 +94,10 @@
       }
     },
     methods: {
+      write: function(message){
+        var date = Util.formatDate(new Date());
+        this.logs.push({date, message});        
+      },
       __autoScrolle: function(){
         var $view = document.querySelector("#log-view");
         $view.scrollTop = (this.logs.length * 15) + 30;

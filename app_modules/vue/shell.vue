@@ -25,7 +25,7 @@
       float: left;
     }
     
-    .shell-save, .shell-reload, .shell-help{
+    .shell-save, .shell-revert, .shell-help{
       display: inline-block;
       height: $header_height - 1;
       line-height: $header_height - 1;
@@ -96,6 +96,7 @@
         border: solid 1px black;
         width: 302px;
         display: table;
+        overflow: hidden;
         
         .shell-selector-button-data, 
         .shell-selector-button-css, 
@@ -275,7 +276,7 @@
       <div class="shell-save" @click="save">
         <i class="fa fa-floppy-o fa-lg"></i>
       </div>
-      <div class="shell-reload" @click="reload">
+      <div class="shell-revert" @click="revert">
         <i class="fa fa-retweet fa-lg"></i>
       </div>
       <div class="shell-header-space"></div>
@@ -286,15 +287,15 @@
         <div class="shell-selector">
           <div class="shell-selector-button">
             <div class="shell-selector-button-js" @click="showJs"
-              :class="{'shell-selector-active': editorStatus.js.isActive}">
+              :class="{'shell-selector-active': activeField == 'js'}">
               .js
             </div>
             <div class="shell-selector-button-css" @click="showCss" 
-              :class="{'shell-selector-active': editorStatus.css.isActive}">
+              :class="{'shell-selector-active': activeField == 'css'}">
               .css
             </div>
             <div class="shell-selector-button-data" @click="showData" 
-              :class="{'shell-selector-active': editorStatus.$data.isActive}">
+              :class="{'shell-selector-active': activeField == '$data'}">
               $data
             </div>
           </div>
@@ -302,12 +303,12 @@
             <i class="fa fa-trash"></i>
           </div>
         </div>
-        <div class="shell-editor" id="editor">
+        <div class="shell-editor" id="editor_view">
         </div>
       </div>
       <div class="shell-output">
         <div class="shell-render">
-          <div class="shell-render-button" @click="refreshD3">
+          <div class="shell-render-button" @click="loadD3">
             <i class="fa fa-refresh" :class="{'fa-spin': isRefreshClicked }"></i>
           </div>
           <div class="shell-view-description">element id: #d3</div>
@@ -317,12 +318,12 @@
             <span>Rendering View</span>
             <div class="shell-d3" id="d3"></div>
           </div>
-          <div class="shell-log" id="log">
+          <div class="shell-log" id="log_view">
           </div>
         </div>
       </div>
     </div>
-    <div class="shell-modal" id="modal">test</div>
+    <div class="shell-modal" id="manual_view"></div>
   </div>
 </template>
 
@@ -330,74 +331,48 @@
   import Vue from "vue";
   import Manual from "./manual.vue";
   import Log from "./log-viewer.vue";
-  import Util from "./../js/my-util.js";
   import DOM from "./../js/my-dom.js";
-  import _ from "lodash";
+  import Editor from "./editor.vue";
   
   export default {
     data: {
       isRefreshClicked: false,
-      editorStatus: {
-        js: { isActive: false, text: " "},
-        css: { isActive: false, text: " "},
-        $data: { isActive: false, text: " "}
-      },
-      editor: null,
+      editorVM: null,
+      logVM: null,
+      manVM: null,
       isUpdateStatus: false,
-      statusMessage: ""
+      statusMessage: "",
+      activeField: "js"
     },
     ready: function(){
-      this.__initEditor("editor");
-      const logVM = new Vue(Log).$mount("#log");
-      const manVM = new Vue(Manual).$mount("#modal");
-      this.showJs();
-      var savedTexts = JSON.parse(localStorage.getItem("savedTexts"));
-      if(savedTexts){
-        this.editorStatus.js.text = savedTexts.js;
-        this.editorStatus.css.text = savedTexts.css;
-        this.editorStatus.$data.text = savedTexts.$data;
-        var activeField = this.__whatisActive();
-        this.editor.setValue(this.editorStatus[activeField].text, -1);
-      }
-      this.__setLogHook(logVM);
-      this.refreshD3();
+      this.logVM = new Vue(Log).$mount("#log_view");
+      this.manVM = new Vue(Manual).$mount("#manual_view");
+      this.editorVM = new Vue(Editor).$mount("#editor_view");
+      this.__setLogHook(this.logVM);
+      this.__setUnloadHook();
+      this.loadD3();
     },
     methods: {
       save: function(){
-        var self = this;
-        var savedTexts = {
-          js: self.editorStatus.js.text,
-          css: self.editorStatus.css.text, 
-          $data: self.editorStatus.$data.text,
-          date: Util.formatDate(new Date())
-        };
-        localStorage.setItem("savedTexts", JSON.stringify(savedTexts));
-        this.__updateStaus(`saved at ${savedTexts.date}`);
+        var time = this.editorVM.saveAll();
+        this.__updateStaus(`saved at ${time}`);
       },
-      reload: function(){
-        var savedTexts = JSON.parse(localStorage.getItem("savedTexts"));
-        if(savedTexts){
-          this.editorStatus.js.text = savedTexts.js;
-          this.editorStatus.css.text = savedTexts.css;
-          this.editorStatus.$data.text = savedTexts.$data;
-          var activeField = this.__whatisActive();
-          this.editor.setValue(this.editorStatus[activeField].text, -1);
-          this.__updateStaus(`reverted to  ${savedTexts.date}`);
+      revert: function(){
+        var time = this.editorVM.revertAll();
+        if(time){
+          this.__updateStaus(`reverted to  ${time}`);
         }
       },
       help: function(){
-        $("#modal").plainModal("open", {
+        $("#manual_view").plainModal("open", {
           duration: 200,
           overlay: {fillColor: '#111', opacity: 0.1}
         });
       },
       empty: function(){
-        this.editorStatus.js.text = " ";
-        this.editorStatus.css.text = " ";
-        this.editorStatus.$data.text = " ";
-        this.editor.setValue(" ", -1);
+        this.editorVM.emptyAll();
       },
-      refreshD3: function(){
+      loadD3: function(){
         this.isRefreshClicked = true;
         setTimeout(()=>{
           this.isRefreshClicked = false;
@@ -405,61 +380,24 @@
         var view = document.querySelector("#d3");
         view.innerHTML = "";
         DOM.removeStyle("my-style");
-        DOM.setStyle(this._css, "my-style");
+        DOM.setStyle(this.editorVM.readField("css"), "my-style");
         var dataObj = {};
-        try{ dataObj = JSON.parse(this.editorStatus.$data.text); }
+        try{ dataObj = JSON.parse(this.editorVM.readField("$data")); }
         catch(e){}
         DOM.removeJs();
-        DOM.setJs(this.editorStatus.js.text, dataObj);
+        DOM.setJs(this.editorVM.readField("js"), dataObj);
       },
       showData: function(){
-        if("$data" != this.__whatisActive()){
-          this.editorStatus.$data.isActive = true;
-          this.editorStatus.css.isActive = false;
-          this.editorStatus.js.isActive  = false;
-          this.editor.setValue(this.editorStatus.$data.text, -1);
-          this.editor.getSession().setMode("ace/mode/javascript");
-        }
+        this.editorVM.showField("$data");
+        this.activeField = this.editorVM.whatisActive();
       },
       showCss: function(){
-        if("css" != this.__whatisActive()){
-          this.editorStatus.css.isActive = true;
-          this.editorStatus.$data.isActive = false;
-          this.editorStatus.js.isActive  = false;
-          this.editor.setValue(this.editorStatus.css.text, -1);
-          this.editor.getSession().setMode("ace/mode/css");
-        }
+        this.editorVM.showField("css");
+        this.activeField = this.editorVM.whatisActive();
       },
       showJs: function(){
-        if("js" != this.__whatisActive()){
-          this.editorStatus.js.isActive = true;
-          this.editorStatus.$data.isActive = false;
-          this.editorStatus.css.isActive  = false;
-          this.editor.setValue(this.editorStatus.js.text, -1);
-          this.editor.getSession().setMode("ace/mode/javascript");
-        }
-      },
-      __initEditor: function(elemID){
-        this.editor = ace.edit("editor");
-        this.editor.$blockScrolling = Infinity;
-        this.editor.setTheme("ace/theme/vibrant_ink");
-        this.editor.setOptions({
-          enableBasicAutocompletion: true,
-          enableSnippets: true,
-          enableLiveAutocompletion: true
-        });
-        this.editor.setFontSize(12);
-        this.editor.getSession().setUseWrapMode(true);
-        this.editor.getSession().setTabSize(2);
-        this.editor.on("change", (e) => {
-          var activeField = this.__whatisActive();
-          this.editorStatus[activeField].text = this.editor.getValue();
-        });        
-      },
-      __whatisActive: function(){
-        return _.findKey(this.editorStatus, (o) => {
-          return o.isActive;
-        });
+        this.editorVM.showField("js");
+        this.activeField = this.editorVM.whatisActive();
       },
       __updateStaus: function(message){
         this.statusMessage = message;
@@ -471,12 +409,17 @@
       __setLogHook: function(logVM){
         console._log = console.log;
         console.log = function(message){
-          logVM.$emit("write", message);
+          logVM.write(message);
           console._log(message);
         };
         window.onerror = (msg, file, line, column, err) => {
           console.log(msg);
           console.log(`Uncaught Exeption line: ${line}`);
+        };
+      },
+      __setUnloadHook: function(){
+        window.onbeforeunload = (e)=>{
+          return 'You can save texts to click the save button. Do you want to leave now?';
         };
       }
     }
